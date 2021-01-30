@@ -1,0 +1,251 @@
+<! DOCTYPE html>
+
+<html>
+<head>
+<title>ch3-webrtc</title>
+    <script>
+        var peer_connection;
+        var stun_server = "stun.l.google.com:19302"; // el(l) not 1(one)// ip 209.85.144.127
+        var  signaling_server;
+        var call_token;
+        var rtc_session_description;
+
+      function start(){
+        //1 
+        //signaling_server = new WebSocket("ws://localhost:1111");
+        signaling_server = new WebSocket("ws://192.168.1.11:1111"); //ipv4 address
+        //2
+            peer_connection = new RTCPeerConnection( {
+                "iceServers": [
+                        {"url": "stun:" + stun_server} 
+                ]  } );
+        //3
+        peer_connection.onicecandidate = function(ice_event) { //parameter type RTCPeerConnectionIceEvent
+        if (ice_event.candidate) {
+          // Send the candidate to the remote peer
+          signaling_server.send(JSON.stringify({
+              type: "new_ice_candidate",
+              candidate: ice_event.candidate
+            }));
+          console.log('sending  new_ice_candidate to remote peer. . .')
+        } else {
+          console.log('All ICE candidates have been sent');
+        }
+      }
+      //4
+      //deprecated peer_connection.onaddstream = function(event){}
+      //to watch for track events instead
+      peer_connection.ontrack = function(event){
+        console.log('in here 1...');
+        document.getElementById("remote_video").srcObject = event.streams[0];
+        document.getElementById("loading_state").style.display = "none"; //cosmetic
+        document.getElementById("open_call_state").style.display = "block"; //cosmetic
+      }
+      //setup stream from the local camera
+      setup_video(); //5 & 6
+
+      //7 most important in starrt(). To find I am caller or calee
+      if(document.location.hash === "" || document.location.hash === undefined){
+        ////////////// caller block begins
+        var token = Math.round(Math.random()*1000);
+        call_token = '#' + token;
+        console.log('I am caller... call_token ' + call_token);
+
+        //8
+        signaling_server.onopen = function(){ //when connection is open
+          //setup "caller" signal handler
+          signaling_server.onmessage =  caller_signal_handler;
+          //tell signaling server that caller joined the call now
+          //no handling of 'join'? Server must be handling
+          signaling_server.send(JSON.stringify({
+            token:call_token,
+            type:"join"
+          }));
+          console.log(' send call_token, join to server');
+          document.title = 'I am Caller'
+          document.getElementById('loading_state').innerHTML = 
+          "Ready for a call...ask your friend to visit:<br/><br/>"+document.location + ' and call_token=' + call_token;
+        }
+        //////////////////// caller block above
+      }else{
+        ////////////////////callee block below
+        console.log('I am a callee because I have a # fragment ...');
+        //get hashed call_token
+        call_token = document.location.hash;
+        signaling_server.onopen = function() {
+          //setup "callee" singal handler
+          signaling_server.onmessage = callee_signal_handler;
+          //1(2)  tell signaling server you callee joined the call 
+          signaling_server.send(JSON.stringify({
+            token: call_token,
+            type: "join", //must be handled by the server 
+          }));
+          //2(2) let caller know you have arrived so they can start the call
+          signaling_server.send(JSON.stringify({
+            token: call_token,
+            type: "callee_arrived"
+          }));
+        } //onopen ends
+        document.title = "You are the Callee";
+        document.getElementById("loading_state").innerHTML = "One moment please...connecting your call...";
+      }//else ends
+
+    } //ends start()
+    //////////////////start() end//////////////////
+    //9
+    // handle signals as a caller
+    function caller_signal_handler(event){
+      var signal = JSON.parse(event.data);
+      if(signal.type === "callee_arrived" ){
+        //myPeerConnection.createOffer(successCallback, failureCallback, [options]) 
+        peer_connection.createOffer(
+          //successCallback,
+          //how to get descriptionOffer from event or do I need to create by hand here
+          new_description_created,
+          log_error// failureCallback,
+        );
+      }else if(signal.type === "new_ice_candidate"){
+        peer_connection.addIceCandidate(
+          new RTCIceCandidate(signal.candidate));
+      }else if(signal.type === "new_description"){ //he is caller. So, its sdp.type='answer' and  is coming from calleee        
+        rtc_session_description = new RTCSessionDescription(signal.sdp);
+        //pc.setLocalDescription(sessionDescription, successCallback, errorCallback);
+        peer_connection.setRemoteDescription(rtc_session_description, function(){
+                          if(peer_connection.remoteDescription.type === "answer"){
+                            // extend with your own custom answer handling here
+                            console.log('2(2) callee has sent sdp.anwer...');
+                          }
+                        }, log_error );
+      } else{ //else if
+          console.log( 'my own signals to be handled');
+      }
+    }
+    //10
+    //function used above are defined below
+    //note: both createOffer and createAnswer create event sdp.type = "new_description"
+    function new_description_created(description_offer_or_answer){
+      //pc.setLocalDescription(sessionDescription, successCallback, errorCallback);
+      console.log('debug: description_offer_or_answer=' + JSON.stringify(description_offer_or_answer));
+      peer_connection.setLocalDescription(
+        description_offer_or_answer,
+        function(){
+          signaling_server.send(JSON.stringify({
+                token: call_token,
+                type: "new_description",
+                sdp: description_offer_or_answer
+              })
+          )
+        },
+        log_error
+        
+      );
+    }    
+    //11
+    function callee_signal_handler(event){
+      var signal = JSON.parse(event.data);
+      if(signal.type === "new_ice_candidate"){
+        peer_connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      }else if(signal.type === "new_description"){ //This is callee. So she received caller's "sdp.offer"
+        rtc_session_description = new RTCSessionDescription(signal.sdp);
+        // pc.setRemoteDescription(sessionDescription, successCallback, errorCallback);
+        peer_connection.setRemoteDescription(rtc_session_description, //sdp
+          function(){
+            if(peer_connection.remoteDescription === "offer"){ //type RTCSessionDescription
+              peer_connection.createAnswer(
+                new_description_created, //<-- it is callback
+                log_error);
+                console.log('1(2) caller has sent sdp offer!!!')
+            }
+          },
+          log_error        
+        );
+        
+      }
+
+    }
+    //12
+    //RTCSessionDescription
+    //rtc_session_description = new RTCSessionDescription(???)
+
+    //13
+    function setup_video(){
+      //6
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+      if (navigator.getUserMedia) {
+        //old api getUserMedia. Need to use promise
+        //navigator.getUserMedia(constraints, successCallback, errorCallback);
+        navigator.getUserMedia({ audio: true, video: { width: 1280, height: 720 } },
+            function(local_stream) {
+              //var video = document.querySelector('video');
+              var video = document.querySelector('#local_video'); // need to send to ?RemotePeerConnection.
+              video.srcObject = local_stream;
+              video.onloadedmetadata = function(e) {
+                //console.log('is onloadmetadata inside invoked...?');
+                video.play();
+              };
+            },
+            log_error
+        );
+      } else {
+        console.log("getUserMedia not supported");
+      }
+  }
+
+//14
+// generic error handler
+function log_error(error) {
+  console.log(error);
+}
+</script>
+
+<style>
+    html, body {
+      padding: 0px;
+      margin: 0px;
+      font-family: "Arial","Helvetica",sans-serif;
+    }
+    body {background-color: coral;}
+
+    #loading_state {
+      position: absolute;
+      top: 45%;
+      left: 0px;
+      width: 100%;
+      font-size: 20px;
+      text-align: center;
+    }
+    #open_call_state {
+      display: none; 
+    }
+    #local_video {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 160px;
+      height: 120px;
+      background: #333333;
+    }
+    #remote_video {
+      position: absolute;
+      top: 0px;
+      left: 0px;
+      width: 1024px;
+      height: 768px;
+      background: #999999;
+    }
+    </style>    
+</head>
+
+
+
+<body onload="start()">
+    <div id="loading_state">
+        loading...
+      </div>    
+      <div id="open_call_state">
+        <video id="remote_video"></video>
+        <video id="local_video"></video>
+      </div>
+    </body>
+</body>
+</html>
