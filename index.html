@@ -12,7 +12,7 @@
 
       function start(){
         //1 
-        //signaling_server = new WebSocket("ws://localhost:1111");
+       // signaling_server = new WebSocket("ws://localhost:1111");
         signaling_server = new WebSocket("ws://nielexpt.com:1111"); //ipv4 address
         //2
             peer_connection = new RTCPeerConnection( {
@@ -181,8 +181,9 @@
               var video = document.querySelector('#local_video'); // need to send to ?RemotePeerConnection.
               video.srcObject = local_stream;
               video.onloadedmetadata = function(e) {
-                //console.log('is onloadmetadata inside invoked...?');
+                console.log('to play video is onloadmetadata inside invoked...?');
                 video.play();
+                peer_connection.addStream(local_stream); //deprecated
               };
             },
             log_error
