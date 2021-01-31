@@ -13,7 +13,7 @@
       function start(){
         //1 
         //signaling_server = new WebSocket("ws://localhost:1111");
-        signaling_server = new WebSocket("ws://192.168.1.11:1111"); //ipv4 address
+        signaling_server = new WebSocket("ws://nielexpt.com:1111"); //ipv4 address
         //2
             peer_connection = new RTCPeerConnection( {
                 "iceServers": [
@@ -113,7 +113,7 @@
         peer_connection.setRemoteDescription(rtc_session_description, function(){
                           if(peer_connection.remoteDescription.type === "answer"){
                             // extend with your own custom answer handling here
-                            console.log('2(2) callee has sent sdp.anwer...');
+                            console.log('2(2) callee / is about to/ has sent sdp.anwer...');
                           }
                         }, log_error );
       } else{ //else if
@@ -150,11 +150,12 @@
         // pc.setRemoteDescription(sessionDescription, successCallback, errorCallback);
         peer_connection.setRemoteDescription(rtc_session_description, //sdp
           function(){
-            if(peer_connection.remoteDescription === "offer"){ //type RTCSessionDescription
+            if(peer_connection.remoteDescription.type === "offer"){ //type RTCSessionDescription
+                console.log('step: 1(2) caller / is about to/ has sent sdp offer!!!')
               peer_connection.createAnswer(
                 new_description_created, //<-- it is callback
                 log_error);
-                console.log('1(2) caller has sent sdp offer!!!')
+                console.log('step: 1-prime(2) caller has sent sdp offer!!!')
             }
           },
           log_error        
